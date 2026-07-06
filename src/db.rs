@@ -77,15 +77,12 @@ pub(crate) fn insert_process_rows(db: &mut Connection, sample_id: i64, ts: i64, 
         let mut identity_select = tx.prepare("SELECT id FROM process_identities WHERE app=? AND name=? AND cmd=?")?;
         let mut sample_insert = tx.prepare("INSERT INTO process_samples_v2 (sample_id,ts,pid,ppid,process_id,cpu_percent,cpu_seconds,io_mb,rss_mb,score,estimated_watts,is_self) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")?;
         let mut app_totals: HashMap<String, f64> = HashMap::new();
-        let mut proc_totals: HashMap<i64, ProcTotal> = HashMap::new();
         let mut group_totals: HashMap<(String, String), GroupTotal> = HashMap::new();
         for r in rows {
             identity_insert.execute(params![r.now.app, r.now.name, r.now.cmd])?;
             let process_id: i64 = identity_select.query_row(params![r.now.app, r.now.name, r.now.cmd], |row| row.get(0))?;
             sample_insert.execute(params![sample_id, ts, r.now.pid, r.now.ppid, process_id, r.cpu_percent, r.cpu_seconds, r.io_mb, r.now.rss_mb, r.score, r.estimated_watts, if r.now.is_self {1} else {0}])?;
             *app_totals.entry(r.now.app.clone()).or_default() += r.estimated_watts;
-            let p = proc_totals.entry(process_id).or_default();
-            p.watts += r.estimated_watts; p.cpu_seconds += r.cpu_seconds; p.io_mb += r.io_mb; p.rss_mb_sum += r.now.rss_mb; p.rss_rows += 1; p.row_count += 1;
             let child = subprocess_label(&r.now.name, &r.now.cmd);
             let g = group_totals.entry((r.now.app.clone(), child.clone())).or_insert_with(|| GroupTotal { app: r.now.app.clone(), child_name: child, cmd: r.now.cmd.clone(), ..Default::default() });
             g.watts += r.estimated_watts; g.cpu_seconds += r.cpu_seconds; g.io_mb += r.io_mb; g.rss_mb_sum += r.now.rss_mb; g.rss_rows += 1; g.row_count += 1;
@@ -93,8 +90,6 @@ pub(crate) fn insert_process_rows(db: &mut Connection, sample_id: i64, ts: i64, 
         }
         let mut total_insert = tx.prepare("INSERT INTO sample_app_totals (sample_id,ts,app,watts) VALUES (?,?,?,?) ON CONFLICT(sample_id, app) DO UPDATE SET watts=excluded.watts, ts=excluded.ts")?;
         for (app, watts) in app_totals { total_insert.execute(params![sample_id, ts, app, watts])?; }
-        let mut proc_insert = tx.prepare("INSERT INTO sample_process_totals (sample_id,ts,process_id,watts,cpu_seconds,io_mb,rss_mb_sum,rss_rows,row_count) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(sample_id, process_id) DO UPDATE SET watts=excluded.watts,cpu_seconds=excluded.cpu_seconds,io_mb=excluded.io_mb,rss_mb_sum=excluded.rss_mb_sum,rss_rows=excluded.rss_rows,row_count=excluded.row_count,ts=excluded.ts")?;
-        for (id, p) in proc_totals { proc_insert.execute(params![sample_id, ts, id, p.watts, p.cpu_seconds, p.io_mb, p.rss_mb_sum, p.rss_rows, p.row_count])?; }
         let mut group_insert = tx.prepare("INSERT INTO sample_group_totals (sample_id,ts,app,child_name,cmd,watts,cpu_seconds,io_mb,rss_mb_sum,rss_rows,row_count) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(sample_id, app, child_name) DO UPDATE SET cmd=excluded.cmd,watts=excluded.watts,cpu_seconds=excluded.cpu_seconds,io_mb=excluded.io_mb,rss_mb_sum=excluded.rss_mb_sum,rss_rows=excluded.rss_rows,row_count=excluded.row_count,ts=excluded.ts")?;
         for g in group_totals.values() { group_insert.execute(params![sample_id, ts, g.app, g.child_name, g.cmd, g.watts, g.cpu_seconds, g.io_mb, g.rss_mb_sum, g.rss_rows, g.row_count])?; }
     }
@@ -102,8 +97,6 @@ pub(crate) fn insert_process_rows(db: &mut Connection, sample_id: i64, ts: i64, 
     Ok(())
 }
 
-#[derive(Default)]
-struct ProcTotal { watts: f64, cpu_seconds: f64, io_mb: f64, rss_mb_sum: f64, rss_rows: i64, row_count: i64 }
 #[derive(Default)]
 struct GroupTotal { app: String, child_name: String, cmd: String, watts: f64, cpu_seconds: f64, io_mb: f64, rss_mb_sum: f64, rss_rows: i64, row_count: i64 }
 
@@ -132,17 +125,24 @@ pub(crate) fn record_sleep_gap_if_needed(cfg: &Config, db: &mut Connection, prev
 
 pub(crate) fn prune_old(db: &Connection, cfg: &Config, now: i64) -> Result<()> {
     let cutoff = now - cfg.retention_days * 24 * 3_600_000;
+    let detailed_days = cfg.detailed_process_retention_days.min(cfg.retention_days).max(1);
+    let detailed_cutoff = now - detailed_days * 24 * 3_600_000;
+
     for sql in [
-        "DELETE FROM process_samples WHERE ts < ?",
-        "DELETE FROM process_samples_v2 WHERE ts < ?",
         "DELETE FROM sample_app_totals WHERE ts < ?",
-        "DELETE FROM sample_process_totals WHERE ts < ?",
         "DELETE FROM sample_group_totals WHERE ts < ?",
         "DELETE FROM sleep_events WHERE end_ts < ?",
         "DELETE FROM environment_samples WHERE ts < ?",
         "DELETE FROM battery_samples WHERE ts < ?",
     ] { db.execute(sql, params![cutoff])?; }
-    db.execute("DELETE FROM process_identities WHERE id NOT IN (SELECT DISTINCT process_id FROM process_samples_v2 UNION SELECT DISTINCT process_id FROM sample_process_totals)", [])?;
+
+    // Detailed per-process snapshots are only used for recent/latest process views.
+    db.execute("DELETE FROM process_samples WHERE ts < ?", params![detailed_cutoff])?;
+    db.execute("DELETE FROM process_samples_v2 WHERE ts < ?", params![detailed_cutoff])?;
+
+    // sample_process_totals is no longer written or queried; purge legacy rows opportunistically.
+    db.execute("DELETE FROM sample_process_totals", [])?;
+    db.execute("DELETE FROM process_identities WHERE id NOT IN (SELECT DISTINCT process_id FROM process_samples_v2)", [])?;
     Ok(())
 }
 
@@ -182,7 +182,7 @@ pub(crate) struct GroupRow {
     pub(crate) samples: i64,
 }
 pub(crate) fn query_group_rows(db: &Connection, since: i64) -> Result<Vec<GroupRow>> {
-    let mut stmt = db.prepare("SELECT app,child_name AS name,MIN(cmd) AS cmd,SUM(watts) AS watts,SUM(cpu_seconds) AS cpu_seconds,SUM(io_mb) AS io_mb,SUM(rss_mb_sum) AS rss_mb_sum,SUM(rss_rows) AS rss_rows,SUM(row_count) AS rows,COUNT(DISTINCT sample_id) AS samples FROM sample_group_totals WHERE ts >= ? GROUP BY app,child_name")?;
+    let mut stmt = db.prepare("SELECT app,child_name AS name,MIN(cmd) AS cmd,SUM(watts) AS watts,SUM(cpu_seconds) AS cpu_seconds,SUM(io_mb) AS io_mb,SUM(rss_mb_sum) AS rss_mb_sum,SUM(rss_rows) AS rss_rows,SUM(row_count) AS rows,COUNT(*) AS samples FROM sample_group_totals INDEXED BY idx_sample_group_totals_ts WHERE ts >= ? GROUP BY app,child_name")?;
     let rows = stmt
         .query_map(params![since], |r| Ok(GroupRow { app: r.get(0)?, name: r.get(1)?, cmd: r.get(2)?, watts: r.get(3)?, cpu_seconds: r.get(4)?, io_mb: r.get(5)?, rss_mb_sum: r.get(6)?, rss_rows: r.get(7)?, rows: r.get(8)?, samples: r.get(9)? }))?
         .collect::<rusqlite::Result<Vec<_>>>()?;

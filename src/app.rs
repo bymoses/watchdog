@@ -570,7 +570,7 @@ impl App {
             }
         }
         let mut other_total = 0.0;
-        let mut stmt = self.db.prepare("SELECT sample_id, app, watts FROM sample_app_totals WHERE ts > ? ORDER BY sample_id")?;
+        let mut stmt = self.db.prepare("SELECT sample_id, app, watts FROM sample_app_totals WHERE ts > ?")?;
         let agg = stmt.query_map(params![points_since], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, f64>(2)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
         for (sample_id, app_raw, watts) in agg {
             let Some(idx) = by_sample.get(&sample_id).copied() else { continue; };
@@ -617,7 +617,7 @@ impl App {
     pub(crate) fn api_groups(&self, q: GroupsQuery) -> Result<Value> {
         let hours = clamp(q.hours.unwrap_or(8.0), 1.0, 24.0 * 30.0);
         let since = now_ms() - (hours * 3_600_000.0) as i64;
-        let sample_count: i64 = self.db.query_row("SELECT COUNT(DISTINCT sample_id) FROM sample_group_totals WHERE ts >= ?", params![since], |r| r.get(0)).unwrap_or(0).max(1);
+        let sample_count: i64 = self.db.query_row("SELECT COUNT(*) FROM sample_app_totals WHERE ts >= ? AND app='System / baseline'", params![since], |r| r.get(0)).unwrap_or(0).max(1);
         let sampled_hours = sample_count as f64 * self.cfg.poll_interval.as_secs_f64() / 3600.0;
         let rows = query_group_rows(&self.db, since)?;
         let mut groups: HashMap<String, GroupAgg> = HashMap::new();

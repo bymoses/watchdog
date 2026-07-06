@@ -30,6 +30,8 @@ Useful options:
 
 Private/incognito browser focused-window titles are redacted by default. USB-C/typec power-role and USB power-supply context is recorded when the kernel exposes it.
 
+Retention defaults are tuned for a continuous trace: battery/environment/app aggregate history is kept for 365 days, while detailed per-process snapshots are kept for 2 days.
+
 ## Install user service
 
 ```bash

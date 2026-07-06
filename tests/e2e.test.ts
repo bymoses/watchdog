@@ -150,7 +150,8 @@ describe('bms-watchdog e2e', () => {
     expect(unit).toContain(' start ');
     expect(unit).toContain('--no-serve');
     expect(unit).toContain('--port 25001');
-    expect(unit).toContain('--retention-days 14');
+    expect(unit).toContain('--retention-days 365');
+    expect(unit).toContain('--detailed-process-retention-days 2');
     expect(unit).toContain('--baseline-mode adaptive');
     expect(unit).toContain('--suspend-gap-seconds 120');
     await rm(dir, { recursive: true, force: true });

@@ -94,8 +94,10 @@ pub(crate) struct RuntimeArgs {
     pub(crate) record_when_plugged: bool,
     #[arg(long)]
     pub(crate) force_collect: bool,
-    #[arg(long, default_value_t = 14)]
+    #[arg(long, default_value_t = 365, help = "Days to keep battery/environment/app aggregate history")]
     pub(crate) retention_days: i64,
+    #[arg(long, default_value_t = 2, help = "Days to keep detailed per-process snapshots")]
+    pub(crate) detailed_process_retention_days: i64,
     #[arg(long, default_value = "adaptive")]
     pub(crate) baseline_mode: String,
     #[arg(long, default_value_t = 4.0)]

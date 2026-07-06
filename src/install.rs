@@ -20,7 +20,7 @@ fn install_systemctl_unit(args: SystemctlUnitArgs) -> Result<()> {
     let unit_dir = args.unit_dir.unwrap_or_else(default_user_unit_dir);
     fs::create_dir_all(&unit_dir).with_context(|| format!("create {}", unit_dir.display()))?;
     let unit_path = unit_dir.join("bms-watchdog.service");
-    let options: [(&str, String); 17] = [
+    let options: [(&str, String); 18] = [
         ("--data-dir", cfg.data_dir.display().to_string()),
         ("--host", cfg.host.clone()),
         ("--port", cfg.port.to_string()),
@@ -29,6 +29,7 @@ fn install_systemctl_unit(args: SystemctlUnitArgs) -> Result<()> {
         ("--power-root", cfg.power_root.display().to_string()),
         ("--host-config-dir", cfg.host_config_dir.display().to_string()),
         ("--retention-days", cfg.retention_days.to_string()),
+        ("--detailed-process-retention-days", cfg.detailed_process_retention_days.to_string()),
         ("--baseline-mode", cfg.baseline_mode.clone()),
         ("--baseline-watts", cfg.baseline_watts.to_string()),
         ("--baseline-min-watts", cfg.baseline_min_watts.to_string()),
