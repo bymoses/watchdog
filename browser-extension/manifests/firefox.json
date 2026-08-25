@@ -1,0 +1,31 @@
+{
+  "manifest_version": 2,
+  "name": "BMS Watchdog",
+  "version": "0.1.0",
+  "description": "Privacy-conscious browser focus and selected-site media telemetry.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "browser@bms-watchdog.local",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "alarms",
+    "webNavigation",
+    "http://127.0.0.1/*"
+  ],
+  "optional_permissions": ["<all_urls>"],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "browser_action": {
+    "default_title": "BMS Watchdog settings"
+  },
+  "options_ui": {
+    "page": "options/index.html",
+    "open_in_tab": true
+  }
+}

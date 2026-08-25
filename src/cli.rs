@@ -1,9 +1,13 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "bms-watchdog", version, about = "Local battery/process monitor")]
+#[command(
+    name = "bms-watchdog",
+    version,
+    about = "Local battery/process monitor"
+)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub(crate) command: Commands,
@@ -58,6 +62,22 @@ pub(crate) struct OldDbArgs {
 pub(crate) enum InstallTarget {
     #[command(name = "systemctl-unit")]
     SystemctlUnit(SystemctlUnitArgs),
+    #[command(name = "pi-presence")]
+    PiPresence(PiPresenceArgs),
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub(crate) enum PiPresenceAction {
+    Install,
+    Uninstall,
+    Status,
+}
+#[derive(Args)]
+pub(crate) struct PiPresenceArgs {
+    #[arg(long, value_enum, default_value = "status")]
+    pub(crate) action: PiPresenceAction,
+    #[arg(long, value_name = "DIR", default_value = "integrations/pi-presence")]
+    pub(crate) package_dir: PathBuf,
 }
 
 #[derive(Args, Clone)]
@@ -68,7 +88,11 @@ pub(crate) struct SystemctlUnitArgs {
     pub(crate) no_serve: bool,
     #[arg(long, help = "Write the unit but do not run systemctl")]
     pub(crate) dry_run: bool,
-    #[arg(long, value_name = "DIR", help = "Override user systemd unit directory")]
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Override user systemd unit directory"
+    )]
     pub(crate) unit_dir: Option<PathBuf>,
 }
 
@@ -94,10 +118,73 @@ pub(crate) struct RuntimeArgs {
     pub(crate) record_when_plugged: bool,
     #[arg(long)]
     pub(crate) force_collect: bool,
-    #[arg(long, default_value_t = 365, help = "Days to keep battery/environment/app aggregate history")]
+    #[arg(
+        long,
+        default_value_t = 365,
+        help = "Days to keep battery/environment/app aggregate history"
+    )]
     pub(crate) retention_days: i64,
-    #[arg(long, default_value_t = 2, help = "Days to keep detailed per-process snapshots")]
+    #[arg(
+        long,
+        default_value_t = 2,
+        help = "Days to keep detailed per-process snapshots"
+    )]
     pub(crate) detailed_process_retention_days: i64,
+    #[arg(
+        long,
+        default_value_t = 365,
+        help = "Days to keep normalized agent telemetry; 0 keeps it indefinitely"
+    )]
+    pub(crate) agent_retention_days: i64,
+    #[arg(
+        long,
+        default_value_t = 365,
+        help = "Days to keep focus-context and derived activity intervals"
+    )]
+    pub(crate) context_retention_days: i64,
+    #[arg(
+        long,
+        help = "Disable change-driven focus-context intervals and labels"
+    )]
+    pub(crate) no_context_tracking: bool,
+    #[arg(long, default_value = "basename", value_parser = ["full", "basename", "hash"], help = "Terminal/workspace path storage mode")]
+    pub(crate) context_path_mode: String,
+    #[arg(long, help = "Disable terminal/tmux context enrichment")]
+    pub(crate) no_terminal_context: bool,
+    #[arg(long, value_name = "PATH", action = clap::ArgAction::Append, help = "tmux socket override (repeatable)")]
+    pub(crate) tmux_socket: Vec<PathBuf>,
+    #[arg(long, value_name = "DIR", action = clap::ArgAction::Append, help = "Workspace root for dynamic project discovery (repeatable)")]
+    pub(crate) workspace_root: Vec<PathBuf>,
+    #[arg(
+        long,
+        default_value_t = 90,
+        help = "Days to keep browser transition events"
+    )]
+    pub(crate) browser_event_retention_days: i64,
+    #[arg(
+        long,
+        default_value_t = 30,
+        help = "Days to keep opt-in browser titles; 0 deletes them during retention"
+    )]
+    pub(crate) browser_title_retention_days: i64,
+    #[arg(
+        long,
+        help = "Disable browser pairing, ingestion, and policy integration"
+    )]
+    pub(crate) no_browser_integration: bool,
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Secure runtime agent-presence lease directory"
+    )]
+    pub(crate) agent_presence_dir: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Disable all coding-agent telemetry discovery and indexing"
+    )]
+    pub(crate) no_agent_tracking: bool,
+    #[arg(long, value_name = "DIR", action = clap::ArgAction::Append, help = "Pi session root (repeatable; overrides environment/default discovery)")]
+    pub(crate) pi_sessions_dir: Vec<PathBuf>,
     #[arg(long, default_value = "adaptive")]
     pub(crate) baseline_mode: String,
     #[arg(long, default_value_t = 4.0)]

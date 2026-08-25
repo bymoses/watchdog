@@ -1,11 +1,20 @@
+mod activity;
+mod agent_adapters;
+mod agent_presence;
+mod agent_telemetry;
 mod app;
+mod browser_api;
+mod charge_control;
 mod cli;
 mod collect;
 mod config;
+mod context;
+mod context_api;
 mod db;
 mod install;
 mod migrate;
 mod server;
+mod terminal_context;
 mod util;
 
 use anyhow::Result;

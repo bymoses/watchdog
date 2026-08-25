@@ -1,0 +1,17 @@
+{
+  "name": "@bms-watchdog/browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "validate:manifests": "bun run scripts/validate-manifests.ts",
+    "test": "bun test",
+    "check": "bunx tsc --noEmit",
+    "ci": "bun run check && bun test && bun run build && bun run validate:manifests"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "BMS Watchdog",
+  "version": "0.1.0",
+  "description": "Privacy-conscious browser focus and selected-site media telemetry.",
+  "permissions": ["tabs", "storage", "alarms", "webNavigation", "scripting"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "optional_host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "BMS Watchdog settings"
+  },
+  "options_page": "options/index.html"
+}

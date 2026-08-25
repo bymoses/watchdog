@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "revision": 7,
+  "serverTimestamp": 1785340300000,
+  "policies": [
+    {
+      "id": 42,
+      "name": "Focused video budget",
+      "revision": 7,
+      "enabled": true,
+      "scope": {
+        "domains": ["youtube.com"],
+        "excludedDomains": ["music.youtube.com"]
+      },
+      "metric": "focused_playback_seconds",
+      "windowKind": "calendar-day",
+      "budgetSeconds": 3600,
+      "warningSeconds": 300,
+      "enforcement": "soft-block",
+      "schedule": {
+        "weekdays": [1, 2, 3, 4, 5, 6, 7],
+        "startMinute": 0,
+        "endMinute": 1440
+      },
+      "grace": {
+        "graceSeconds": 30,
+        "snoozeSeconds": 300,
+        "maxDailySnoozes": 2,
+        "sessionGapSeconds": 60,
+        "rollingSeconds": 3600
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "policyId": 42,
+      "revision": 7,
+      "enforcement": "soft-block",
+      "action": "warn",
+      "usedSeconds": 3300,
+      "budgetSeconds": 3600,
+      "remainingSeconds": 300,
+      "reason": "Attention budget nearly exhausted",
+      "degraded": false
+    }
+  ]
+}

@@ -16,6 +16,19 @@ pub(crate) struct Config {
     pub(crate) force_collect: bool,
     pub(crate) retention_days: i64,
     pub(crate) detailed_process_retention_days: i64,
+    pub(crate) agent_retention_days: i64,
+    pub(crate) context_retention_days: i64,
+    pub(crate) context_tracking: bool,
+    pub(crate) context_path_mode: String,
+    pub(crate) terminal_context: bool,
+    pub(crate) tmux_sockets: Vec<PathBuf>,
+    pub(crate) workspace_roots: Vec<PathBuf>,
+    pub(crate) browser_event_retention_days: i64,
+    pub(crate) browser_title_retention_days: i64,
+    pub(crate) browser_integration: bool,
+    pub(crate) agent_presence_dir: PathBuf,
+    pub(crate) agent_tracking: bool,
+    pub(crate) pi_sessions_dirs: Vec<PathBuf>,
     pub(crate) baseline_mode: String,
     pub(crate) baseline_watts: f64,
     pub(crate) baseline_min_watts: f64,
@@ -45,6 +58,21 @@ impl Config {
             force_collect: args.force_collect,
             retention_days: args.retention_days.max(1),
             detailed_process_retention_days: args.detailed_process_retention_days.max(1),
+            agent_retention_days: args.agent_retention_days.max(0),
+            context_retention_days: args.context_retention_days.max(1),
+            context_tracking: !args.no_context_tracking,
+            context_path_mode: args.context_path_mode,
+            terminal_context: !args.no_terminal_context,
+            tmux_sockets: args.tmux_socket,
+            workspace_roots: args.workspace_root,
+            browser_event_retention_days: args.browser_event_retention_days.max(1),
+            browser_title_retention_days: args.browser_title_retention_days.max(0),
+            browser_integration: !args.no_browser_integration,
+            agent_presence_dir: args
+                .agent_presence_dir
+                .unwrap_or_else(default_agent_presence_dir),
+            agent_tracking: !args.no_agent_tracking,
+            pi_sessions_dirs: resolve_pi_sessions_dirs(args.pi_sessions_dir),
             baseline_mode: args.baseline_mode,
             baseline_watts: args.baseline_watts,
             baseline_min_watts: args.baseline_min_watts,
@@ -59,6 +87,30 @@ impl Config {
             self_pid: args.self_pid,
         }
     }
+}
+
+fn resolve_pi_sessions_dirs(explicit: Vec<PathBuf>) -> Vec<PathBuf> {
+    if !explicit.is_empty() {
+        return explicit;
+    }
+    if let Some(path) = env::var_os("PI_CODING_AGENT_SESSION_DIR") {
+        return vec![PathBuf::from(path)];
+    }
+    if let Some(path) = env::var_os("PI_CODING_AGENT_DIR") {
+        return vec![PathBuf::from(path).join("sessions")];
+    }
+    env::var_os("HOME")
+        .map(|home| vec![PathBuf::from(home).join(".pi/agent/sessions")])
+        .unwrap_or_default()
+}
+
+pub(crate) fn default_agent_presence_dir() -> PathBuf {
+    env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::temp_dir().join(format!("bms-watchdog-{}", std::process::id()))
+        })
+        .join("bms-watchdog/agent-presence")
 }
 
 pub(crate) fn default_data_dir() -> PathBuf {

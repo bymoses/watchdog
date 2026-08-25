@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "clientId": "11111111-1111-4111-8111-111111111111",
+  "privacyMode": "domains-only",
+  "selectedMediaOrigins": ["https://www.youtube.com"],
+  "queueHealth": {
+    "depth": 2,
+    "bytes": 1024,
+    "dropped": 1,
+    "permanentRejected": 0,
+    "recoverySnapshots": 1,
+    "oldestTimestamp": 1785340290000,
+    "lastSuccessfulSync": 1785340280000,
+    "lastDataLoss": 1785340270000,
+    "observedTimestamp": 1785340300000
+  },
+  "policyRevision": 7,
+  "heartbeatSeconds": 20,
+  "leaseSeconds": 45,
+  "maxBatchEvents": 100
+}

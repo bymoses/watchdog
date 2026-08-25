@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "Focused video budget",
+  "enabled": true,
+  "scope": {
+    "domains": ["youtube.com"],
+    "excludedDomains": ["music.youtube.com"]
+  },
+  "metric": "focused_playback_seconds",
+  "windowKind": "calendar-day",
+  "budgetSeconds": 3600,
+  "warningSeconds": 300,
+  "enforcement": "soft-block",
+  "schedule": {
+    "weekdays": [1, 2, 3, 4, 5, 6, 7],
+    "startMinute": 0,
+    "endMinute": 1440
+  },
+  "grace": {
+    "graceSeconds": 30,
+    "snoozeSeconds": 300,
+    "maxDailySnoozes": 2,
+    "sessionGapSeconds": 60,
+    "rollingSeconds": 3600
+  }
+}

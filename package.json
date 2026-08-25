@@ -7,7 +7,8 @@
     "build:release": "./scripts/cargo-docker.sh build --release",
     "check:rust": "./scripts/cargo-docker.sh check",
     "test:rust": "./scripts/cargo-docker.sh test",
-    "test:e2e": "bun run build:rust && bun test tests/e2e.test.ts"
+    "test:e2e": "bun run build:rust && bun test tests/e2e.test.ts",
+    "benchmark:context-storage": "bun scripts/context-storage-benchmark.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

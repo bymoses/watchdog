@@ -4,7 +4,19 @@ import { escapeAttr, escapeHtml, fmtDuration, fmtPct, fmtTime, fmtW } from './fo
 const expandedGroups = new Set();
 let groupsData = null;
 
+// Advisory copy only. Options themselves always come from the kernel, so an
+// unknown value still renders correctly, just without a description.
+const CHARGE_TYPE_NOTES = {
+  Fast: 'Charges to full at the highest rate',
+  Standard: 'Charges to full at a normal rate',
+  Long_Life: 'Conservation mode · holds near 80% to reduce wear',
+};
+
+let chargeControl = null;
+let chargePending = null;
+
 export function renderStatus(status) {
+  renderChargeControl(status.chargeControl);
   const b = status.latestBattery;
   setText('battery', b ? fmtPct(b.capacity) : '—');
   renderBatteryStatus(b);
@@ -30,6 +42,76 @@ export function renderStatus(status) {
   setText('network', e ? ('RX ' + (e.net_rx_mbps || 0).toFixed(2) + ' Mbps / TX ' + (e.net_tx_mbps || 0).toFixed(2) + usbWatts) : '—');
   setText('focusApp', e?.focused_app || '—');
   setText('focusTitle', e?.focused_title || 'optional niri helper not running');
+}
+
+export function setupChargeControl(onSelect) {
+  const toggle = document.getElementById('chargeTypeToggle');
+  if (!toggle) return;
+  toggle.addEventListener('click', event => {
+    const button = event.target.closest('button[data-charge-type]');
+    if (!button || button.disabled) return;
+    onSelect(button.dataset.chargeType);
+  });
+}
+
+// `force` marks a payload that came straight back from a write, which is the
+// only kind allowed to clear a pending state. Background polls must not, or a
+// 30s refresh landing mid-write would snap the toggle back to the stale value.
+export function renderChargeControl(control, { force = false } = {}) {
+  const card = document.getElementById('chargeControl');
+  if (!card) return;
+  if (!control || !control.supported) {
+    card.hidden = true;
+    chargeControl = null;
+    return;
+  }
+  if (chargePending && !force && control.current !== chargePending) return;
+  if (force || control.current === chargePending) chargePending = null;
+  card.hidden = false;
+  chargeControl = control;
+  paintChargeControl();
+}
+
+export function setChargeControlPending(value) {
+  chargePending = value;
+  paintChargeControl();
+}
+
+export function setChargeControlError(message) {
+  chargePending = null;
+  paintChargeControl({ keepNote: true });
+  setNote(message || 'Could not change charge type', 'is-error');
+}
+
+function paintChargeControl({ keepNote = false } = {}) {
+  const toggle = document.getElementById('chargeTypeToggle');
+  if (!chargeControl || !toggle) return;
+  const locked = !chargeControl.writable;
+  toggle.innerHTML = (chargeControl.options || []).map(option => {
+    const active = chargePending ? option === chargePending : option === chargeControl.current;
+    return '<button type="button" data-charge-type="' + escapeAttr(option) + '"' +
+      (active ? ' class="active"' : '') +
+      (locked || chargePending ? ' disabled' : '') +
+      ' aria-pressed="' + (active ? 'true' : 'false') + '"' +
+      ' title="' + escapeAttr(CHARGE_TYPE_NOTES[option] || option) + '">' +
+      escapeHtml(chargeTypeLabel(option)) + '</button>';
+  }).join('');
+  if (keepNote) return;
+  if (chargePending) setNote('Applying ' + chargeTypeLabel(chargePending) + '\u2026', '');
+  else if (locked) setNote(chargeControl.reason || 'Read-only on this host', 'is-warn');
+  else setNote(CHARGE_TYPE_NOTES[chargeControl.current] || chargeTypeLabel(chargeControl.current) || 'unknown', '');
+}
+
+function setNote(text, kind) {
+  const note = document.getElementById('chargeControlNote');
+  if (!note) return;
+  note.textContent = text;
+  note.classList.remove('is-error', 'is-warn');
+  if (kind) note.classList.add(kind);
+}
+
+function chargeTypeLabel(value) {
+  return String(value || '').replace(/_/g, ' ');
 }
 
 export function renderLegend(apps) {

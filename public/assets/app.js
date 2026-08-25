@@ -1,12 +1,15 @@
-import { fetchGroups, fetchProcesses, fetchSeries, fetchStatus } from './api.js';
+import { fetchAgentUsage, fetchGroups, fetchProcesses, fetchSeries, fetchStatus, setChargeType } from './api.js';
+import { agentUsageSelection, drawAgentUsageChart, setAgentUsageData, setAgentUsageError, setAgentUsageLoading, setupAgentUsageChart } from './agent-usage-chart.js';
 import { drawCharts, setSeries, setupTimelineHover } from './charts.js';
+import { setupContextDashboard } from './context-dashboard.js';
 import { getTimezoneOffsetHours, setTimezoneOffsetHours, timezoneLabel } from './format.js';
-import { renderGroups, renderLegend, renderProcessTable, renderStatus, setupTabs } from './views.js';
+import { renderChargeControl, renderGroups, renderLegend, renderProcessTable, renderStatus, setChargeControlError, setChargeControlPending, setupChargeControl, setupTabs } from './views.js';
 
 let currentSeries = null;
 let currentKey = '';
 let lastHeavyPanelsAt = 0;
 let requestSeq = 0;
+let agentRequestSeq = 0;
 
 async function refresh({ full = false } = {}) {
   const requestId = ++requestSeq;
@@ -59,6 +62,18 @@ async function refresh({ full = false } = {}) {
   if (rejected) throw rejected.reason;
 }
 
+async function applyChargeType(value) {
+  setChargeControlPending(value);
+  try {
+    renderChargeControl(await setChargeType(value), { force: true });
+  } catch (error) {
+    // Surface the server's reason, then resync so the toggle reflects the
+    // kernel rather than the failed intent.
+    setChargeControlError(error.message);
+    refresh().catch(console.error);
+  }
+}
+
 function setHeavyLoadingState() {
   document.getElementById('rows').innerHTML = '<tr><td colspan="7" class="muted">Loading latest processes…</td></tr>';
   document.getElementById('groupRows').innerHTML = '<tr><td colspan="7" class="muted">Loading groups…</td></tr>';
@@ -91,12 +106,26 @@ function isStale(requestId) {
   return requestId !== requestSeq;
 }
 
+async function refreshAgentUsage(selection = agentUsageSelection(), { loading = false } = {}) {
+  const requestId = ++agentRequestSeq;
+  if (loading) setAgentUsageLoading();
+  try {
+    const usage = await fetchAgentUsage(selection);
+    if (requestId === agentRequestSeq) setAgentUsageData(usage);
+  } catch (error) {
+    if (requestId === agentRequestSeq) setAgentUsageError(error);
+  }
+}
+
 function boot() {
   setupTimezoneSelector();
   setupTabs();
   setupTimelineHover();
-  window.addEventListener('resize', drawCharts);
-  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', drawCharts);
+  setupContextDashboard();
+  setupChargeControl(value => applyChargeType(value));
+  setupAgentUsageChart(selection => refreshAgentUsage(selection));
+  window.addEventListener('resize', () => { drawCharts(); drawAgentUsageChart(); });
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => { drawCharts(); drawAgentUsageChart(); });
   document.getElementById('refresh').onclick = () => refresh({ full: true }).catch(console.error);
   document.getElementById('hours').onchange = () => refresh({ full: true }).catch(console.error);
   document.getElementById('top').onchange = () => refresh({ full: true }).catch(console.error);
@@ -105,6 +134,8 @@ function boot() {
     renderExistingWithNewTimezone();
   };
   setInterval(() => refresh().catch(console.error), 30000);
+  setInterval(() => refreshAgentUsage(), 30000);
+  refreshAgentUsage(agentUsageSelection(), { loading: true });
   refresh({ full: true }).catch(e => { console.error(e); alert(e.message); });
 }
 

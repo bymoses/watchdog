@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>BMS Watchdog settings</title><link rel="stylesheet" href="styles.css"></head>
+<body><main>
+<header><p class="eyebrow">BMS Watchdog</p><h1>Browser telemetry</h1><p>Domain-first, local, and under your control.</p></header>
+<section><h2>Connection</h2><label>Loopback server <input id="endpoint" type="url" spellcheck="false"></label><label>Browser name <input id="displayName" maxlength="128"></label><div class="row"><input id="pairCode" placeholder="Pairing code" autocomplete="off"><button id="pair">Pair</button><button id="revoke" class="danger">Revoke</button></div><p id="connection" class="status"></p></section>
+<section><h2>Privacy mode</h2><label><span>Data level</span><select id="privacyMode"><option value="off">Off</option><option value="domains-only">Domains only (recommended)</option><option value="domains-and-titles">Domains and titles</option><option value="selected-sites-media">Selected-site media</option><option value="full-debug">Full debug (temporary)</option></select></label><div class="notice"><strong>Never collected:</strong> full URLs, queries, fragments, page text, forms, cookies, requests, media titles, or IDs. Private windows are excluded.</div><label class="check"><input id="failClosed" type="checkbox"> Fail closed for an already-cached hard-block policy when the server is unavailable</label><button id="save">Save settings</button></section>
+<section><h2>Selected-site media</h2><p>Grant optional access only to origins where media state or interventions are wanted.</p><div class="row"><input id="mediaOrigin" type="url" placeholder="https://www.youtube.com"><button id="addOrigin">Grant and add</button></div><ul id="origins"></ul></section>
+<section><h2>Data preview</h2><p>This is what the current active tab would contribute.</p><pre id="preview">No active browser tab observed.</pre></section>
+<section><h2>Health</h2><dl id="health"></dl><button id="sync">Sync now</button><p id="error" role="alert"></p></section>
+</main><script src="options.js"></script></body></html>

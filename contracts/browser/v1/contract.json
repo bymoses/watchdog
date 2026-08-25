@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "defaultEndpoint": "http://127.0.0.1:24923",
+  "payloadVersion": 1,
+  "leaseSeconds": 45,
+  "heartbeatSeconds": 20,
+  "alarmPeriodMinutes": {
+    "firefoxMv2": 0.5,
+    "chromiumMv3": 0.5
+  },
+  "limits": {
+    "batchEvents": 100,
+    "batchBytes": 131072,
+    "offlineSeconds": 86400,
+    "futureSkewSeconds": 300,
+    "titleCharacters": 512,
+    "domainBytes": 253,
+    "mediaSeconds": 864000,
+    "playbackRateMin": 0.1,
+    "playbackRateMax": 16,
+    "selectedMediaOrigins": 100,
+    "queueDepth": 1000,
+    "queueBytes": 2097152,
+    "queueCounter": 2147483647
+  },
+  "eventTypes": [
+    "snapshot",
+    "window_focus",
+    "active_tab",
+    "navigation",
+    "visibility",
+    "media_play",
+    "media_pause",
+    "media_end",
+    "heartbeat",
+    "tab_close"
+  ],
+  "mediaStates": ["none", "paused", "playing", "ended", "seeking"],
+  "privacy": {
+    "off": { "domain": false, "origin": false, "title": false, "mediaState": false, "mediaDetail": false },
+    "domains-only": { "domain": true, "origin": true, "title": false, "mediaState": false, "mediaDetail": false },
+    "domains-and-titles": { "domain": true, "origin": true, "title": true, "mediaState": false, "mediaDetail": false },
+    "selected-sites-media": { "domain": true, "origin": true, "title": false, "mediaState": true, "mediaDetail": true },
+    "full-debug": { "domain": true, "origin": true, "title": true, "mediaState": true, "mediaDetail": true }
+  },
+  "policyMetrics": [
+    "tab_active_seconds",
+    "browser_focused_seconds",
+    "document_visible_seconds",
+    "media_playback_seconds",
+    "audible_playback_seconds",
+    "focused_playback_seconds",
+    "verified_focused_playback_seconds",
+    "background_playback_seconds"
+  ],
+  "policyWindows": ["calendar-day", "rolling", "session"],
+  "enforcements": ["observe", "warn", "soft-block", "hard-block"],
+  "actions": ["allow", "observe", "warn", "soft-block", "hard-block", "continue", "snooze", "override"]
+}

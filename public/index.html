@@ -32,6 +32,11 @@
       </div>
 
       <div class="vitals">
+        <div class="vital charge-control" id="chargeControl" hidden>
+          <span class="vital-key"><span class="ico ico-bolt"></span>Charge limit</span>
+          <span class="segmented charge-segmented" id="chargeTypeToggle" role="group" aria-label="Battery charge type"></span>
+          <span class="muted" id="chargeControlNote">—</span>
+        </div>
         <div class="vital">
           <span class="vital-key"><span class="ico ico-bolt"></span>System draw</span>
           <span class="value" id="watts">—</span>
@@ -76,7 +81,11 @@
         </div>
       </div>
 
-      <section class="panel chart-panel">
+      <section id="contextDashboard" class="context-dashboard" aria-labelledby="contextDashboardTitle">
+        <div class="panel context-boot" role="status">Loading context and attention workspace…</div>
+      </section>
+
+      <section class="panel chart-panel power-chart-panel">
         <div class="lanes-bar">
           <span class="lanes-key">Layers</span>
           <button class="lane-chip" data-lane="rate">Rate</button>
@@ -89,6 +98,33 @@
         </div>
         <canvas id="chart"></canvas>
         <div id="legend" class="legend"></div>
+      </section>
+
+      <section class="panel agent-usage-panel" id="agentUsagePanel">
+        <div class="agent-usage-header">
+          <div>
+            <span class="eyebrow">Coding-agent telemetry</span>
+            <h2>Agent usage</h2>
+            <p id="agentUsageStatus" class="muted">Loading agent usage…</p>
+          </div>
+          <div class="agent-usage-controls">
+            <span class="field"><span class="field-key">Harness</span><select id="agentUsageAgent"><option value="all">All harnesses</option></select></span>
+            <span class="field"><span class="field-key">Range</span><select id="agentUsageRange"><option value="24h">24h</option><option value="7d" selected>7d</option><option value="30d">30d</option><option value="all">All</option></select></span>
+            <span class="segmented" aria-label="Group cumulative tokens by">
+              <button class="active" data-agent-group="harness">Harness</button>
+              <button data-agent-group="model">Model</button>
+              <button data-agent-group="session">Session</button>
+            </span>
+          </div>
+        </div>
+        <div class="agent-summary" id="agentUsageSummary" aria-live="polite"></div>
+        <div class="agent-chart-wrap">
+          <canvas id="agentUsageChart" aria-label="Cumulative coding-agent token distribution by harness, model, or session"></canvas>
+          <div id="agentUsageChartState" class="agent-chart-state">Loading agent usage…</div>
+          <div id="agentUsageTip" class="agent-usage-tip"></div>
+        </div>
+        <div id="agentUsageLegend" class="agent-usage-legend"></div>
+        <div id="agentUsageNotes" class="agent-usage-notes"></div>
       </section>
 
       <div class="tabs">

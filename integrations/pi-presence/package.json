@@ -1,0 +1,30 @@
+{
+  "name": "@bms-watchdog/pi-presence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Privacy-preserving Pi session presence leases for bms-watchdog",
+  "keywords": [
+    "pi-package"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "check": "bun test && bun x tsc --noEmit && bash -n scripts/install.sh scripts/uninstall.sh scripts/status.sh",
+    "pi:install": "bash scripts/install.sh",
+    "pi:uninstall": "bash scripts/uninstall.sh",
+    "pi:status": "bash scripts/status.sh"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.82.1",
+    "@types/bun": "1.3.14",
+    "typescript": "5.9.3"
+  }
+}

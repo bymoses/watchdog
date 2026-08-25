@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "policyId": 42,
+  "action": "soft-block",
+  "decisionRevision": 7,
+  "eventTimestamp": 1785340300000,
+  "remainingSeconds": 0
+}
