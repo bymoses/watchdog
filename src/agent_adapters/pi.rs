@@ -124,10 +124,10 @@ impl PiAdapter {
         }
         sort_parent_first(&mut files);
 
-        // Register every header before reading messages so copied events can point at a parent
-        // even when the parent's file has no new bytes in this scan.
-        {
-            let tx = db.transaction()?;
+        // Register changed/new headers before messages so copied events can point
+        // at a parent. Unchanged parent headers are already in the store.
+        if !changed.is_empty() {
+            let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             {
                 let mut sink = SqliteTelemetrySink::new(
                     &tx,
@@ -542,7 +542,10 @@ fn apply_event_chunk(
     file: &PiFile,
     events: &[PendingUsage],
 ) -> Result<()> {
-    let tx = db.transaction()?;
+    // Reserve the writer before the sink's no-op checks establish a snapshot.
+    // A deferred read transaction cannot upgrade after a coalesced collector
+    // commits, even with busy_timeout (SQLITE_BUSY_SNAPSHOT).
+    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     {
         let mut sink =
             SqliteTelemetrySink::new(&tx, source_id, &descriptor.agent_type, &source.source_key);
@@ -677,7 +680,7 @@ fn finalize_scan_file(
     size: u64,
     mtime_ms: i64,
 ) -> Result<()> {
-    let tx = db.transaction()?;
+    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     {
         let mut sink =
             SqliteTelemetrySink::new(&tx, source_id, &descriptor.agent_type, &source.source_key);
