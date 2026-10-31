@@ -1098,23 +1098,31 @@ pub(crate) struct GroupRow {
     pub(crate) samples: i64,
 }
 pub(crate) fn query_group_rows(db: &Connection, since: i64) -> Result<Vec<GroupRow>> {
-    let mut stmt = db.prepare("SELECT app,child_name AS name,MIN(cmd) AS cmd,SUM(watts) AS watts,SUM(cpu_seconds) AS cpu_seconds,SUM(io_mb) AS io_mb,SUM(rss_mb_sum) AS rss_mb_sum,SUM(rss_rows) AS rss_rows,SUM(row_count) AS rows,COUNT(*) AS samples FROM sample_group_totals INDEXED BY idx_sample_group_totals_ts WHERE ts >= ? GROUP BY app,child_name")?;
-    let rows = stmt
-        .query_map(params![since], |r| {
-            Ok(GroupRow {
-                app: r.get(0)?,
-                name: r.get(1)?,
-                cmd: r.get(2)?,
-                watts: r.get(3)?,
-                cpu_seconds: r.get(4)?,
-                io_mb: r.get(5)?,
-                rss_mb_sum: r.get(6)?,
-                rss_rows: r.get(7)?,
-                rows: r.get(8)?,
-                samples: r.get(9)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    // SQLite's GROUP BY sorter spills every matching raw row (including cmd)
+    // to disk. Stream in timestamp order instead: memory scales with distinct
+    // groups, not history, and a read-only dashboard refresh writes no temp DB.
+    let mut stmt = db.prepare("SELECT app,child_name,cmd,watts,cpu_seconds,io_mb,rss_mb_sum,rss_rows,row_count FROM sample_group_totals INDEXED BY idx_sample_group_totals_ts WHERE ts >= ?")?;
+    let mut rows = stmt.query(params![since])?;
+    let mut groups: HashMap<(String, String), GroupRow> = HashMap::new();
+    while let Some(row) = rows.next()? {
+        let app: String = row.get(0)?;
+        let name: String = row.get(1)?;
+        let cmd: String = row.get(2)?;
+        let group = groups.entry((app.clone(), name.clone())).or_insert_with(|| GroupRow {
+            app, name, cmd: cmd.clone(), watts: 0.0, cpu_seconds: 0.0,
+            io_mb: 0.0, rss_mb_sum: 0.0, rss_rows: 0, rows: 0, samples: 0,
+        });
+        if cmd < group.cmd { group.cmd = cmd; }
+        group.watts += row.get::<_, f64>(3)?;
+        group.cpu_seconds += row.get::<_, f64>(4)?;
+        group.io_mb += row.get::<_, f64>(5)?;
+        group.rss_mb_sum += row.get::<_, f64>(6)?;
+        group.rss_rows += row.get::<_, i64>(7)?;
+        group.rows += row.get::<_, i64>(8)?;
+        group.samples += 1;
+    }
+    let mut rows = groups.into_values().collect::<Vec<_>>();
+    rows.sort_by(|a, b| (&a.app, &a.name).cmp(&(&b.app, &b.name)));
     Ok(rows)
 }
 
@@ -1223,6 +1231,23 @@ fn sql_value_to_json(v: rusqlite::types::ValueRef<'_>) -> Value {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn streaming_groups_match_sql_aggregates() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE sample_group_totals(ts INTEGER,app TEXT,child_name TEXT,cmd TEXT,watts REAL,cpu_seconds REAL,io_mb REAL,rss_mb_sum REAL,rss_rows INTEGER,row_count INTEGER); CREATE INDEX idx_sample_group_totals_ts ON sample_group_totals(ts);").unwrap();
+        for i in 0..1000 {
+            db.execute("INSERT INTO sample_group_totals VALUES(?,?,?,?,?,?,?,?,?,?)", rusqlite::params![i, format!("app{}",i%3), format!("child{}",i%7), format!("cmd{}",i%11), i as f64/7.0, 0.3, 2.5, 32.0, 2, 3]).unwrap();
+        }
+        let actual = super::query_group_rows(&db, 200).unwrap();
+        let mut stmt = db.prepare("SELECT app,child_name,MIN(cmd),SUM(watts),SUM(cpu_seconds),SUM(io_mb),SUM(rss_mb_sum),SUM(rss_rows),SUM(row_count),COUNT(*) FROM sample_group_totals INDEXED BY idx_sample_group_totals_ts WHERE ts>=200 GROUP BY app,child_name").unwrap();
+        let expected = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,f64>(3)?,r.get::<_,f64>(4)?,r.get::<_,f64>(5)?,r.get::<_,f64>(6)?,r.get::<_,i64>(7)?,r.get::<_,i64>(8)?,r.get::<_,i64>(9)?))).unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap();
+        assert_eq!(actual.len(), expected.len());
+        for (a,e) in actual.iter().zip(expected) {
+            assert_eq!((&a.app,&a.name,&a.cmd),(&e.0,&e.1,&e.2));
+            for (x,y) in [(a.watts,e.3),(a.cpu_seconds,e.4),(a.io_mb,e.5),(a.rss_mb_sum,e.6)] { assert!((x-y).abs()<1e-9); }
+            assert_eq!((a.rss_rows,a.rows,a.samples),(e.7,e.8,e.9));
+        }
+    }
     use super::*;
 
     fn migration_connection() -> Connection {
@@ -1351,8 +1376,9 @@ mod tests {
             db.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row
                 .get::<_, i64>(0))
                 .unwrap(),
-            6
+            super::MIGRATIONS.files().count() as i64
         );
+        assert!(object_exists(&db, "index", "idx_environment_sample").unwrap());
         assert!(column_exists(&db, "focus_context_intervals", "agent_session_id").unwrap());
         assert!(object_exists(&db, "view", "active_activity_intervals").unwrap());
         validate_migration_schema(&db, "004_focus_context.sql").unwrap();

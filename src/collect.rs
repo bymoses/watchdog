@@ -18,6 +18,16 @@ const BROWSER_KEYWORDS: &[&str] = &[
     "zen", "firefox", "chrome", "chromium", "brave", "vivaldi", "edge", "browser",
 ];
 
+// Cheap power-source probe for background work; collection keeps its original
+// cadence so stored energy totals and focus continuity retain their semantics.
+pub(crate) fn on_battery_power(root: &Path) -> bool {
+    let entries = safe_readdir(root);
+    if entries.iter().any(|name| safe_read_trim(root.join(name).join("online")) == "1") {
+        return false;
+    }
+    entries.iter().any(|name| safe_read_trim(root.join(name).join("status")) == "Discharging")
+}
+
 pub(crate) fn read_battery(cfg: &Config, collector: &Collector, ts: i64) -> BatterySample {
     if !cfg.power_root.exists() {
         return BatterySample {
@@ -1213,6 +1223,18 @@ fn is_video_like_title(title: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn background_cadence_power_probe_tracks_ac_and_battery() {
+        let root = std::env::temp_dir().join(format!("watchdog-power-probe-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("BAT1")).unwrap();
+        std::fs::create_dir_all(root.join("AC")).unwrap();
+        std::fs::write(root.join("BAT1/status"), "Discharging\n").unwrap();
+        std::fs::write(root.join("AC/online"), "0\n").unwrap();
+        assert!(super::on_battery_power(&root));
+        std::fs::write(root.join("AC/online"), "1\n").unwrap();
+        assert!(!super::on_battery_power(&root));
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use super::*;
     use std::{fs, time::Duration};
 

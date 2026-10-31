@@ -1639,6 +1639,8 @@ pub(crate) fn spawn_context_maintenance(db_path: std::path::PathBuf, settings: C
             }
             Err(_) => return,
         };
+        let mut last_version = -1_i64;
+        let mut backfill_pending = true;
         loop {
             std::thread::sleep(std::time::Duration::from_secs(5));
             let maintenance_now = now_ms();
@@ -1650,8 +1652,14 @@ pub(crate) fn spawn_context_maintenance(db_path: std::path::PathBuf, settings: C
                 false,
             );
             let _ = crate::browser_api::expire_stale_states(&db, maintenance_now, 100);
-            let _ = backfill_historical_context_batch(&mut db, settings, 100);
-            let _ = backfill_agent_session_links(&db);
+            // Keep lease/continuity expiry at 5 s; expensive reconciliation is
+            // dirty-driven and naturally coalesces with collector/indexer writes.
+            let version = db.query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0)).unwrap_or(-1);
+            if backfill_pending || version != last_version {
+                backfill_pending = backfill_historical_context_batch(&mut db, settings, 100).map(|n| n > 0).unwrap_or(true);
+                let _ = backfill_agent_session_links(&db);
+                last_version = version;
+            }
             let job_id = db.query_row(
                 "SELECT id FROM relabel_jobs WHERE status IN ('queued','running') ORDER BY id LIMIT 1",
                 [],

@@ -179,6 +179,20 @@ impl<'a> SqliteTelemetrySink<'a> {
 
 impl AgentTelemetrySink for SqliteTelemetrySink<'_> {
     fn upsert_session(&mut self, session: NormalizedAgentSession) -> Result<i64> {
+        // Avoid even the AUTOINCREMENT sequence write on a no-op conflict.
+        if let Some(id) = self.tx.query_row(
+            "SELECT id FROM agent_sessions WHERE source_id=?1 AND native_session_id=?2
+             AND parent_native_session_id IS COALESCE(?3,parent_native_session_id)
+             AND parent_native_path IS COALESCE(?4,parent_native_path)
+             AND name IS COALESCE(?5,name) AND project_path IS COALESCE(?6,project_path)
+             AND created_ts<=?7
+             AND (?8 IS NULL OR first_activity_ts<=?8)
+             AND (?9 IS NULL OR last_activity_ts>=?9)",
+            params![self.source_id, session.native_session_id, session.parent_native_session_id,
+                session.parent_native_path, session.name, session.project_path, session.created_ts,
+                session.first_activity_ts, session.last_activity_ts],
+            |row| row.get(0),
+        ).optional()? { return Ok(id); }
         self.tx.execute(
             "INSERT INTO agent_sessions
              (source_id,native_session_id,parent_native_session_id,parent_native_path,name,project_path,created_ts,first_activity_ts,last_activity_ts)
@@ -316,27 +330,31 @@ pub(crate) fn spawn_agent_telemetry(db_path: PathBuf, cfg: Config) {
         return;
     }
     tokio::spawn(async move {
-        let mut first = true;
+        let mut last_cleanup = std::time::Instant::now() - Duration::from_secs(3600);
+        let mut interval = tokio::time::interval(cfg.poll_interval);
+        let mut last_scan = None::<std::time::Instant>;
         loop {
+            interval.tick().await;
+            let on_battery = crate::collect::on_battery_power(&cfg.power_root);
+            let cadence = cfg.poll_interval.max(Duration::from_secs(if on_battery { 120 } else { 30 }));
+            if last_scan.is_some_and(|last| last.elapsed() + Duration::from_millis(10) < cadence) { continue; }
+            last_scan = Some(std::time::Instant::now());
+            let cleanup = last_cleanup.elapsed() >= Duration::from_secs(3600);
             let path = db_path.clone();
             let scan_cfg = cfg.clone();
             let result =
-                tokio::task::spawn_blocking(move || scan_registered_adapters(&path, &scan_cfg))
+                tokio::task::spawn_blocking(move || scan_registered_adapters(&path, &scan_cfg, cleanup))
                     .await;
             match result {
-                Ok(Ok(())) => {}
+                Ok(Ok(())) => { if cleanup { last_cleanup = std::time::Instant::now(); } }
                 Ok(Err(err)) => eprintln!("[bms-watchdog] agent telemetry scan failed: {err:#}"),
                 Err(err) => eprintln!("[bms-watchdog] agent telemetry worker failed: {err}"),
             }
-            if first {
-                first = false;
-            }
-            tokio::time::sleep(Duration::from_secs(30)).await;
         }
     });
 }
 
-fn scan_registered_adapters(db_path: &Path, cfg: &Config) -> Result<()> {
+fn scan_registered_adapters(db_path: &Path, cfg: &Config, cleanup: bool) -> Result<()> {
     let mut db = Connection::open(db_path)
         .with_context(|| format!("open telemetry database {}", db_path.display()))?;
     init_db(&mut db)?;
@@ -383,8 +401,10 @@ fn scan_registered_adapters(db_path: &Path, cfg: &Config) -> Result<()> {
             }
         }
     }
-    prune_agent_telemetry(&db, cfg.agent_retention_days, now_ms())?;
-    db.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")?;
+    if cleanup {
+        prune_agent_telemetry(&db, cfg.agent_retention_days, now_ms())?;
+        db.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")?;
+    }
     Ok(())
 }
 
@@ -1097,6 +1117,14 @@ mod tests {
                         last_activity_ts: None,
                     })
                     .unwrap();
+                let changes = tx.total_changes();
+                let same_id = sink.upsert_session(NormalizedAgentSession {
+                    native_session_id: "same-session".into(), parent_native_session_id: None,
+                    parent_native_path: None, name: None, project_path: None,
+                    created_ts: now_ms(), first_activity_ts: None, last_activity_ts: None,
+                }).unwrap();
+                assert_eq!(same_id, session_id);
+                assert_eq!(tx.total_changes(), changes, "no-op session upsert must not write");
                 let event_id = sink
                     .upsert_usage(
                         NormalizedUsageEvent {

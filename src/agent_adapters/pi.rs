@@ -79,10 +79,22 @@ impl PiAdapter {
         descriptor: &AgentDescriptor,
     ) -> Result<AgentScanResult> {
         let paths = discover_jsonl_files(&source.roots)?;
+        let mut cached = load_cached_files(db, source_id)?;
+        let mut changed = HashSet::new();
         let mut files = Vec::new();
         let mut by_path = HashMap::new();
         for path in paths {
-            match read_header(&path) {
+            let key = path_key(&path);
+            let cached_file = cached.remove(&key).and_then(|(state, file)| {
+                let metadata = fs::metadata(&path).ok()?;
+                let mtime = metadata.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as i64;
+                (metadata.len() == state.0 && mtime == state.1 && file_identity(&metadata) == state.2).then_some(file)
+            });
+            let header = match cached_file {
+                Some(file) => Ok(file),
+                None => { changed.insert(key); read_header(&path) }
+            };
+            match header {
                 Ok(mut file) => {
                     by_path.insert(path_key(&path), file.native_session_id.clone());
                     if let Ok(canonical) = fs::canonicalize(&path) {
@@ -95,6 +107,7 @@ impl PiAdapter {
             }
         }
         for file in &mut files {
+            let previous_parent = file.parent_native_session_id.clone();
             file.parent_native_session_id = file.parent_native_path.as_ref().and_then(|parent| {
                 by_path
                     .get(&path_key(Path::new(parent)))
@@ -105,6 +118,9 @@ impl PiAdapter {
                             .and_then(|path| by_path.get(&path_key(&path)).cloned())
                     })
             });
+            if file.parent_native_session_id != previous_parent {
+                changed.insert(file.file_key.clone());
+            }
         }
         sort_parent_first(&mut files);
 
@@ -119,7 +135,7 @@ impl PiAdapter {
                     &descriptor.agent_type,
                     &source.source_key,
                 );
-                for file in &files {
+                for file in files.iter().filter(|file| changed.contains(&file.file_key)) {
                     sink.upsert_session(file.session(None, None, None))?;
                 }
             }
@@ -128,7 +144,7 @@ impl PiAdapter {
 
         let mut events = 0;
         let mut malformed_lines = 0;
-        for file in &files {
+        for file in files.iter().filter(|file| changed.contains(&file.file_key)) {
             let result = scan_file(db, source_id, source, descriptor, file)
                 .with_context(|| format!("scan Pi session {}", file.path.display()));
             match result {
@@ -147,16 +163,37 @@ impl PiAdapter {
                 }
             }
         }
-        db.execute(
-            "DELETE FROM agent_usage_events WHERE source_id=? AND id NOT IN (SELECT usage_event_id FROM agent_session_usage_refs)",
-            params![source_id],
-        )?;
+        if !changed.is_empty() {
+            db.execute(
+                "DELETE FROM agent_usage_events WHERE source_id=? AND id NOT IN (SELECT usage_event_id FROM agent_session_usage_refs)",
+                params![source_id],
+            )?;
+        }
         Ok(AgentScanResult {
             files: files.len(),
             events,
             malformed_lines,
         })
     }
+}
+
+type CachedPiFiles = HashMap<String, ((u64, i64, Option<String>), PiFile)>;
+
+fn load_cached_files(db: &Connection, source_id: i64) -> Result<CachedPiFiles> {
+    let mut stmt = db.prepare(
+        "SELECT f.adapter_file_key,f.file_path,f.file_size,f.file_mtime_ms,f.file_identity,
+         s.native_session_id,s.parent_native_path,s.parent_native_session_id,s.project_path,s.created_ts
+         FROM agent_scan_files f JOIN agent_sessions s ON s.source_id=f.source_id AND s.native_session_id=f.native_session_id
+         WHERE f.source_id=? AND f.last_error IS NULL")?;
+    let rows = stmt.query_map(params![source_id], |row| {
+        let key: String = row.get(0)?;
+        Ok((key.clone(), ((row.get(2)?, row.get(3)?, row.get(4)?), PiFile {
+            path: PathBuf::from(row.get::<_, String>(1)?), file_key: key,
+            native_session_id: row.get(5)?, parent_native_path: row.get(6)?,
+            parent_native_session_id: row.get(7)?, project_path: row.get(8)?, created_ts: row.get(9)?,
+        })))
+    })?.collect::<rusqlite::Result<HashMap<_, _>>>()?;
+    Ok(rows)
 }
 
 impl AgentTelemetryAdapter for PiAdapter {
@@ -979,12 +1016,16 @@ mod tests {
                 .unwrap(),
             2
         );
+        let changes = db.total_changes();
+        let sequence: i64 = db.query_row("SELECT seq FROM sqlite_sequence WHERE name='agent_sessions'", [], |r| r.get(0)).unwrap();
         assert_eq!(
             PiAdapter::scan_source(&mut db, source_id, &source, &descriptor)
                 .unwrap()
                 .events,
             0
         );
+        assert_eq!(db.total_changes(), changes, "unchanged scans must not write");
+        assert_eq!(db.query_row("SELECT seq FROM sqlite_sequence WHERE name='agent_sessions'", [], |r| r.get::<_, i64>(0)).unwrap(), sequence);
 
         let replacement = assistant("entry-three", "response-three", 4000, 30);
         fs::write(&path, format!("{header}\n{replacement}")).unwrap();

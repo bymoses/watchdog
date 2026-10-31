@@ -930,15 +930,14 @@ impl AppQueries {
         let after_ts = q.after_ts.filter(|v| *v > since);
         let points_since = after_ts.unwrap_or(since);
 
-        let mut stmt = self.db.prepare("SELECT app, SUM(watts) FROM sample_app_totals WHERE ts >= ? GROUP BY app ORDER BY SUM(watts) DESC")?;
-        let raw = stmt
-            .query_map(params![since], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+        // Bounded aggregation avoids SQLite spilling the full history to a
+        // temporary GROUP BY B-tree on every incremental dashboard refresh.
+        let mut stmt = self.db.prepare("SELECT app,watts FROM sample_app_totals WHERE ts >= ?")?;
+        let mut rows = stmt.query(params![since])?;
         let mut totals: HashMap<String, f64> = HashMap::new();
-        for (app, total) in raw {
-            *totals.entry(normalize_stored_app(&app)).or_default() += total;
+        while let Some(row) = rows.next()? {
+            let app: String = row.get(0)?;
+            *totals.entry(normalize_stored_app(&app)).or_default() += row.get::<_, f64>(1)?;
         }
         let mut sorted: Vec<_> = totals.iter().collect();
         sorted.sort_by(|a, b| b.1.total_cmp(a.1));
@@ -953,7 +952,7 @@ impl AppQueries {
             }
         }
 
-        let mut battery_rows = self.series_rows_after(points_since, false)?;
+        let mut battery_rows = self.series_rows_after(points_since, after_ts.is_none())?;
         let mut drop_first = false;
         if let Some(after) = after_ts {
             if !battery_rows.is_empty() {
@@ -962,8 +961,6 @@ impl AppQueries {
                     drop_first = true;
                 }
             }
-        } else {
-            battery_rows = self.series_rows_after(since, true)?;
         }
         let mut points = Vec::new();
         for idx in 0..battery_rows.len() {
